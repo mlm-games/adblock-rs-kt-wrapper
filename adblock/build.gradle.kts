@@ -34,6 +34,8 @@ mavenPublishing {
 // mirroring the cargo integration in the Mages project.
 val sdkDir: String? = (project.findProperty("sdk.dir") as String?)
     ?: (rootProject.findProperty("sdk.dir") as String?)
+    ?: (rootProject.file("local.properties").takeIf { it.exists() }
+        ?.useLines { lines -> lines.firstOrNull { it.startsWith("sdk.dir=") }?.substringAfter("=") })
 val ndkDir: String? = sdkDir?.let { d ->
     val ndkRoot = file("$d/ndk")
     if (ndkRoot.exists()) {
