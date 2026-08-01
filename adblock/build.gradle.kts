@@ -30,20 +30,16 @@ mavenPublishing {
 }
 
 // Rebuild the Rust .so when the prebuilt jniLibs are missing or -PrebuildRust=true is passed.
-// The custom task class (ExecOperations) keeps this configuration-cache safe,
-// mirroring the cargo integration in the Mages project.
-val sdkDir: String? = (project.findProperty("sdk.dir") as String?)
+val ndkHomeOverride: String? = (project.findProperty("sdk.dir") as String?)
     ?: (rootProject.findProperty("sdk.dir") as String?)
     ?: (rootProject.file("local.properties").takeIf { it.exists() }
         ?.useLines { lines -> lines.firstOrNull { it.startsWith("sdk.dir=") }?.substringAfter("=") })
-val ndkDir: String? = sdkDir?.let { d ->
-    val ndkRoot = file("$d/ndk")
-    if (ndkRoot.exists()) {
-        ndkRoot.listFiles()?.map { it.name }?.sorted()?.lastOrNull()?.let { "$d/ndk/$it" }
-    } else {
-        null
+    ?.let { sdk ->
+        val ndkRoot = file("$sdk/ndk")
+        if (ndkRoot.exists()) {
+            ndkRoot.listFiles()?.map { it.name }?.sorted()?.lastOrNull()?.let { "$sdk/ndk/$it" }
+        } else null
     }
-}
 
 val hasPrebuiltLibs = file("src/main/jniLibs").let { it.exists() && !it.listFiles().isNullOrEmpty() }
 val rebuildRequested = providers.gradleProperty("rebuildRust").orNull == "true"
@@ -55,7 +51,7 @@ val buildRust = tasks.register<BuildRustTask>("buildRust") {
     abis.set(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
     rustDir.set(rustProjectDir)
     jniOut.set(jniOutputDir)
-    ndkHome.set(ndkDir ?: "")
+    ndkHome.set(ndkHomeOverride ?: "")
     libsPresent.set(hasPrebuiltLibs)
     rebuild.set(rebuildRequested)
 }
@@ -82,8 +78,9 @@ abstract class BuildRustTask @Inject constructor(private val execOps: ExecOperat
         }
         execOps.exec {
             workingDir = rustDir.get().asFile
-            if (ndkHome.isPresent) {
-                environment("ANDROID_NDK_HOME", ndkHome.get())
+            val ndk = ndkHome.orNull?.takeIf { it.isNotBlank() }
+            if (ndk != null) {
+                environment("ANDROID_NDK_HOME", ndk)
             }
             val args = mutableListOf("cargo", "ndk")
             abis.get().forEach { args += listOf("-t", it) }
