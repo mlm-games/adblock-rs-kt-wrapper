@@ -5,6 +5,23 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
+ * Result of a network-request check, mirroring `adblock::blocker::BlockerResult`.
+ *
+ * @param matched whether the request should be blocked (after exceptions).
+ * @param important an `important`-rule match (overrides exceptions).
+ * @param redirect data: URL of a replacement resource to serve instead (e.g. a noop stub).
+ * @param rewrittenUrl rewritten URL from `$removeparam`/`$redirect-rule`, if the URL changed.
+ * @param exception an exception rule matched (request must NOT be blocked).
+ */
+data class BlockDecision(
+    val matched: Boolean,
+    val important: Boolean,
+    val redirect: String?,
+    val rewrittenUrl: String?,
+    val exception: Boolean
+)
+
+/**
  * Cosmet filtering resources for a single page URL, produced by
  * [AdblockEngine.cosmeticResources].
  *
@@ -58,7 +75,7 @@ class AdblockEngine private constructor(private var nativePtr: Long) : AutoClose
             url: String,
             sourceUrl: String,
             requestType: String
-        ): Boolean
+        ): String?
 
         @JvmStatic
         private external fun nativeSerialize(ptr: Long): ByteArray?
@@ -81,11 +98,27 @@ class AdblockEngine private constructor(private var nativePtr: Long) : AutoClose
      *   media|font|websocket|other|document|subdocument|...
      */
     fun shouldBlock(url: String, sourceUrl: String, requestType: String): Boolean {
-        if (closed.get() || nativePtr == 0L) return false
+        return checkNetworkRequest(url, sourceUrl, requestType).matched
+    }
+
+    /**
+     * Full result for a network request, including redirect/rewrite decisions.
+     * Returns a non-blocking decision when the engine isn't ready or the check fails.
+     */
+    fun checkNetworkRequest(url: String, sourceUrl: String, requestType: String): BlockDecision {
+        if (closed.get() || nativePtr == 0L) return BlockDecision(false, false, null, null, false)
         return try {
-            nativeCheckNetworkUrls(nativePtr, url, sourceUrl, requestType)
+            val json = nativeCheckNetworkUrls(nativePtr, url, sourceUrl, requestType) ?: return BlockDecision(false, false, null, null, false)
+            val obj = JSONObject(json)
+            BlockDecision(
+                matched = obj.optBoolean("matched"),
+                important = obj.optBoolean("important"),
+                redirect = if (obj.isNull("redirect")) null else obj.optString("redirect", null),
+                rewrittenUrl = if (obj.isNull("rewritten_url")) null else obj.optString("rewritten_url", null),
+                exception = obj.optBoolean("exception")
+            )
         } catch (_: Throwable) {
-            false
+            BlockDecision(false, false, null, null, false)
         }
     }
 

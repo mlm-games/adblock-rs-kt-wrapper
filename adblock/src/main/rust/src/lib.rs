@@ -70,6 +70,8 @@ pub extern "system" fn Java_org_mlm_adblock_AdblockEngine_nativeLoadFilterList<'
 }
 
 /// Checks a single network request against the loaded filters.
+/// Returns JSON: `{"matched":bool,"important":bool,"redirect":string|null,
+/// "rewritten_url":string|null,"exception":bool}`.
 #[no_mangle]
 pub extern "system" fn Java_org_mlm_adblock_AdblockEngine_nativeCheckNetworkUrls<'local>(
     mut env: JNIEnv<'local>,
@@ -78,8 +80,8 @@ pub extern "system" fn Java_org_mlm_adblock_AdblockEngine_nativeCheckNetworkUrls
     url: JString<'local>,
     source_url: JString<'local>,
     request_type: JString<'local>,
-) -> jboolean {
-    let result = (|| -> anyhow::Result<bool> {
+) -> jstring {
+    let result = (|| -> anyhow::Result<String> {
         let handle = handle_from(ptr).ok_or_else(|| anyhow::anyhow!("null engine"))?;
         let guard = handle.lock().map_err(|_| anyhow::anyhow!("lock poisoned"))?;
         let url: String = env.get_string(&url)?.into();
@@ -87,12 +89,25 @@ pub extern "system" fn Java_org_mlm_adblock_AdblockEngine_nativeCheckNetworkUrls
         let request_type: String = env.get_string(&request_type)?.into();
 
         let request = Request::new(&url, &source_url, &request_type, "")?;
-        Ok(guard.engine.check_network_request(&request).should_block())
+        let res = guard.engine.check_network_request(&request);
+        let mut map = serde_json::Map::new();
+        map.insert("matched".into(), json!(res.should_block()));
+        map.insert("important".into(), json!(res.important));
+        map.insert("redirect".into(), json!(res.redirect));
+        map.insert("rewritten_url".into(), json!(res.rewritten_url));
+        map.insert("exception".into(), json!(res.exception.is_some()));
+        Ok(serde_json::Value::Object(map).to_string())
     })();
 
     match result {
-        Ok(true) => jni::sys::JNI_TRUE,
-        Ok(false) | Err(_) => jni::sys::JNI_FALSE,
+        Ok(s) => env
+            .new_string(&s)
+            .map(|x| x.into_raw())
+            .unwrap_or(std::ptr::null_mut()),
+        Err(e) => {
+            let _ = env.throw_new("java/lang/RuntimeException", format!("{e:#}"));
+            std::ptr::null_mut()
+        }
     }
 }
 
