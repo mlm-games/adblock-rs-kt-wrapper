@@ -1,7 +1,23 @@
 package org.mlm.adblock
 
+import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * Cosmet filtering resources for a single page URL, produced by
+ * [AdblockEngine.cosmeticResources].
+ *
+ * @param selectors CSS selectors that should be hidden (`display: none !important`).
+ * @param js scriptlet JavaScript to inject at document start.
+ */
+data class CosmeticResources(
+    val selectors: List<String>,
+    val js: String
+) {
+    fun css(): String =
+        selectors.joinToString("\n") { "$it { display: none !important; }" }
+}
 
 /**
  * Thin JNI wrapper around the brave/adblock-rust Engine.
@@ -29,6 +45,12 @@ class AdblockEngine private constructor(private var nativePtr: Long) : AutoClose
 
         @JvmStatic
         private external fun nativeLoadFilterList(ptr: Long, rules: String): Boolean
+
+        @JvmStatic
+        private external fun nativeLoadResources(ptr: Long, resourcesJson: String): Boolean
+
+        @JvmStatic
+        private external fun nativeGetCosmeticResources(ptr: Long, url: String): String?
 
         @JvmStatic
         private external fun nativeCheckNetworkUrls(
@@ -64,6 +86,41 @@ class AdblockEngine private constructor(private var nativePtr: Long) : AutoClose
             nativeCheckNetworkUrls(nativePtr, url, sourceUrl, requestType)
         } catch (_: Throwable) {
             false
+        }
+    }
+
+    /**
+     * Loads scriptlet/redirect resources required by `+js(...)` and `$redirect` rules.
+     * Must be called after [loadFilterList] or [deserializeFrom] (resources are not
+     * part of the serialized engine binary).
+     */
+    fun loadResources(resourcesJson: String): Boolean {
+        check(!closed.get()) { "AdblockEngine is closed" }
+        return try {
+            nativeLoadResources(nativePtr, resourcesJson)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Cosmetic filtering resources (hide selectors + scriptlet JS) for a page URL.
+     * Returns null if the engine is not ready or no rules apply.
+     */
+    fun cosmeticResources(url: String): CosmeticResources? {
+        if (closed.get() || nativePtr == 0L) return null
+        return try {
+            val json = nativeGetCosmeticResources(nativePtr, url) ?: return null
+            val obj = JSONObject(json)
+            val selectorsArray = obj.optJSONArray("selectors")
+            val selectors = if (selectorsArray == null) {
+                emptyList()
+            } else {
+                (0 until selectorsArray.length()).map { selectorsArray.getString(it) }
+            }
+            CosmeticResources(selectors, obj.optString("js"))
+        } catch (_: Throwable) {
+            null
         }
     }
 

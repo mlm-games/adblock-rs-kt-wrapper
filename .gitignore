@@ -4,3 +4,4 @@ build/
 .kotlin/
 local.properties
 adblock/src/main/rust/target/
+adblock/src/main/jniLibs/
