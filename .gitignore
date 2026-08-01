@@ -1,0 +1,6 @@
+.gradle/
+build/
+.idea/
+.kotlin/
+local.properties
+adblock/src/main/rust/target/

@@ -1,0 +1,16 @@
+[versions]
+agp = "9.3.1"
+kotlin = "2.4.10"
+jvmTarget = "21"
+compileSdk = "37"
+minSdk = "26"
+
+adblockRust = "0.13.2"
+vanniktechMavenPublish = "0.36.0"
+
+[libraries]
+
+[plugins]
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+vanniktech-mavenPublish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktechMavenPublish" }

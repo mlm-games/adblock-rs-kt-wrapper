@@ -1,0 +1,21 @@
+[package]
+name = "adblock_ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+adblock = { version = "0.13.2", default-features = false, features = [
+  "embedded-domain-resolver",
+] }
+jni = "0.21"
+anyhow = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true
+panic = "abort"
